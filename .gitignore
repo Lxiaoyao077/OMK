@@ -39,3 +39,6 @@ __pycache__/
 
 # Generated WebUI bundle
 /template/webroot/
+
+# Optional local BoringSSL Rust workspace
+/boringssl/rust/
