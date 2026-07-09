@@ -1,0 +1,316 @@
+import { listPackages, getPackagesInfo } from 'kernelsu-alt'
+import type { PackagesInfo } from 'kernelsu-alt'
+import { Config } from '../config'
+import './app_list.scss'
+
+const SYSTEM_APPS_KEY = 'OhMyKeymintWebUIAdditionalApps'
+const DEFAULT_ADDITIONAL_APPS = [
+  'com.google.android.gms',
+  'com.android.vending',
+  'com.google.android.gsf',
+  'com.google.android.gms.ui',
+]
+
+export interface AppEntry {
+  packageName: string
+  appName: string
+  isSystem: boolean
+}
+
+export class AppList {
+  #entries: AppEntry[] = []
+  #config: Config
+  #iconObserver: IntersectionObserver | null = null
+  #systemAppIconObserver: IntersectionObserver | null = null
+  #container: HTMLElement | null = null
+  menuOpen = false
+
+  constructor(config: Config) {
+    this.#config = config
+  }
+
+  async fetch(): Promise<void> {
+    if (import.meta.env.DEV) {
+      this.#initDevMode()
+      return
+    }
+
+    const pkgs = await listPackages('all').catch(() => [])
+
+    let infos: PackagesInfo[]
+    try {
+      infos = await getPackagesInfo(pkgs) as PackagesInfo[]
+    } catch {
+      infos = pkgs.map((pkg: string) => ({
+        packageName: pkg,
+        versionName: '',
+        versionCode: 0,
+        appLabel: pkg,
+        isSystem: false,
+        uid: 0,
+      }))
+    }
+
+    this.#entries = pkgs.map((pkg: string, index: number) => ({
+      packageName: pkg,
+      appName: infos[index]?.appLabel || pkg,
+      isSystem: infos[index]?.isSystem ?? false,
+    }))
+  }
+
+  async save(): Promise<void> {
+    if (import.meta.env.DEV) return
+    await this.#config.write()
+  }
+
+  async refresh(force: boolean = true): Promise<void> {
+    if (force) {
+      await this.#config.read()
+      await this.fetch()
+    }
+    if (this.#container) {
+      this.renderAppList(this.#container)
+      if (force) window.scrollTo(0, 0)
+    }
+  }
+
+  syncSystemAppsWithConfig(): void {
+    const target = (this.#config.get('target') as string[]) || []
+    const additionalApps = this.getAdditionalApps()
+    let changed = false
+
+    for (const pkg of target) {
+      const entry = this.#entries.find((item) => item.packageName === pkg)
+      if (entry?.isSystem && !additionalApps.includes(pkg)) {
+        additionalApps.push(pkg)
+        changed = true
+      }
+    }
+
+    if (changed) this.saveAdditionalApps(additionalApps)
+  }
+
+  selectAll(): void {
+    if (!this.#container) return
+    const target = (this.#config.get('target') as string[]) || []
+    this.#container.querySelectorAll<HTMLElement>('.card').forEach((card) => {
+      const pkg = card.dataset.package!
+      if (!target.includes(pkg)) {
+        this.#config.push('target', pkg)
+      }
+      const checkbox = card.querySelector('md-checkbox')!
+      checkbox.checked = true
+      card.classList.add('selected')
+    })
+  }
+
+  deselectAll(): void {
+    if (!this.#container) return
+    this.#config.set('target', [])
+    this.#container.querySelectorAll<HTMLElement>('.card').forEach((card) => {
+      const checkbox = card.querySelector('md-checkbox')!
+      checkbox.checked = false
+      card.classList.remove('selected')
+    })
+  }
+
+  renderAppList(container: HTMLElement): void {
+    this.#container = container
+    container.innerHTML = ''
+
+    const additionalApps = this.getAdditionalApps()
+    const displayed = this.#entries.filter((entry) => !entry.isSystem || additionalApps.includes(entry.packageName))
+    const target = (this.#config.get('target') as string[]) || []
+
+    displayed.sort((a, b) => {
+      const aTargeted = target.includes(a.packageName)
+      const bTargeted = target.includes(b.packageName)
+      if (aTargeted !== bTargeted) return aTargeted ? -1 : 1
+      return (a.appName || '').localeCompare(b.appName || '')
+    })
+
+    const fragment = document.createDocumentFragment()
+    for (const entry of displayed) {
+      fragment.appendChild(this.#createCard(entry, target.includes(entry.packageName)))
+    }
+    container.appendChild(fragment)
+
+    this.#iconObserver?.disconnect()
+    this.#iconObserver = this.#setupIconObserver(container)
+    this.#setupCardListeners(container)
+  }
+
+  renderSystemAppList(container: HTMLElement): void {
+    container.innerHTML = ''
+
+    const additionalApps = this.getAdditionalApps()
+    const systemEntries = this.#entries.filter((entry) => entry.isSystem)
+
+    systemEntries.sort((a, b) => {
+      const aChecked = additionalApps.includes(a.packageName)
+      const bChecked = additionalApps.includes(b.packageName)
+      if (aChecked !== bChecked) return aChecked ? -1 : 1
+      return (a.appName || '').localeCompare(b.appName || '')
+    })
+
+    const fragment = document.createDocumentFragment()
+    for (const entry of systemEntries) {
+      const cardBox = this.#createCard(entry, additionalApps.includes(entry.packageName))
+      fragment.appendChild(cardBox)
+    }
+    container.appendChild(fragment)
+
+    this.#systemAppIconObserver?.disconnect()
+    this.#systemAppIconObserver = this.#setupIconObserver(container)
+    this.#setupSystemAppListeners(container)
+  }
+
+  getAdditionalApps(): string[] {
+    try {
+      const raw = localStorage.getItem(SYSTEM_APPS_KEY)
+      return raw ? JSON.parse(raw) as string[] : [...DEFAULT_ADDITIONAL_APPS]
+    } catch {
+      return [...DEFAULT_ADDITIONAL_APPS]
+    }
+  }
+
+  saveAdditionalApps(apps: string[]): void {
+    localStorage.setItem(SYSTEM_APPS_KEY, JSON.stringify(apps))
+  }
+
+  async saveSystemAppSelection(checkedApps: string[]): Promise<void> {
+    this.saveAdditionalApps(checkedApps)
+
+    const target = (this.#config.get('target') as string[]) || []
+    const systemEntries = this.#entries.filter((entry) => entry.isSystem)
+
+    for (const entry of systemEntries) {
+      const pkg = entry.packageName
+      const isChecked = checkedApps.includes(pkg)
+      const isTargeted = target.includes(pkg)
+
+      if (isChecked && !isTargeted) {
+        this.#config.push('target', pkg)
+      } else if (!isChecked && isTargeted) {
+        this.#config.removeMatch('target', (value) => value === pkg)
+      }
+    }
+
+    await this.refresh(false)
+  }
+
+  #createCard(entry: AppEntry, targeted: boolean): HTMLElement {
+    const selectedClass = targeted ? ' selected' : ''
+    const checkedAttr = targeted ? 'checked' : ''
+
+    const wrapper = document.createElement('div')
+    wrapper.innerHTML = /* html */ `
+      <div class="card-box">
+        <div class="card card-alpha content${selectedClass}" data-package="${entry.packageName}">
+          <md-ripple></md-ripple>
+          <label class="name" for="checkbox-${entry.packageName}">
+            <div class="app-icon-container">
+              <div class="loader" data-package="${entry.packageName}"></div>
+              <img class="app-icon" data-package="${entry.packageName}" alt="${entry.appName}" draggable="false" />
+              <div class="app-icon-fallback" data-package="${entry.packageName}">
+                <svg viewBox="0 -960 960 960" xmlns="http://www.w3.org/2000/svg"><path d="M40-240q9-107 65.5-197T256-580l-74-128q-6-9-3-19t13-15q8-5 18-2t16 12l74 128q86-36 180-36t180 36l74-128q6-9 16-12t18 2q10 5 13 15t-3 19l-74 128q94 53 150.5 143T920-240H40Zm275.5-124.5Q330-379 330-400t-14.5-35.5Q301-450 280-450t-35.5 14.5Q230-421 230-400t14.5 35.5Q259-350 280-350t35.5-14.5Zm400 0Q730-379 730-400t-14.5-35.5Q701-450 680-450t-35.5 14.5Q630-421 630-400t14.5 35.5Q659-350 680-350t35.5-14.5Z"/></svg>
+              </div>
+            </div>
+            <div class="app-info">
+              <div class="app-name">${entry.appName}</div>
+              <div class="package-name">${entry.packageName}</div>
+            </div>
+          </label>
+          <md-checkbox class="checkbox" id="checkbox-${entry.packageName}" touch-target="wrapper" ${checkedAttr}></md-checkbox>
+        </div>
+      </div>`
+    return wrapper.firstElementChild as HTMLElement
+  }
+
+  #setupCardListeners(container: HTMLElement): void {
+    container.querySelectorAll<HTMLElement>('.card').forEach((card) => {
+      card.onclick = () => {
+        if (this.menuOpen) return
+        const pkg = card.dataset.package!
+        const checkbox = card.querySelector('md-checkbox')!
+        const target = (this.#config.get('target') as string[]) || []
+
+        if (checkbox.checked) {
+          this.#config.removeMatch('target', (value) => value === pkg)
+          checkbox.checked = false
+          card.classList.remove('selected')
+        } else {
+          if (!target.includes(pkg)) {
+            this.#config.push('target', pkg)
+          }
+          checkbox.checked = true
+          card.classList.add('selected')
+        }
+      }
+    })
+  }
+
+  #setupSystemAppListeners(container: HTMLElement): void {
+    container.querySelectorAll<HTMLElement>('.card').forEach((card) => {
+      card.onclick = () => {
+        const checkbox = card.querySelector('md-checkbox')!
+        checkbox.checked = !checkbox.checked
+        card.classList.toggle('selected')
+      }
+    })
+  }
+
+  #setupIconObserver(container: HTMLElement): IntersectionObserver {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return
+        const el = entry.target as HTMLElement
+        const pkg = el.querySelector('.app-icon')?.getAttribute('data-package')
+        if (pkg) {
+          this.#loadIcon(pkg, el)
+          observer.unobserve(el)
+        }
+      })
+    }, { rootMargin: '100px', threshold: 0.1 })
+
+    container.querySelectorAll('.app-icon-container').forEach((el) => observer.observe(el))
+    return observer
+  }
+
+  #loadIcon(packageName: string, scopeEl?: HTMLElement): void {
+    const root = scopeEl ?? document
+    const img = root.querySelector<HTMLImageElement>(`.app-icon[data-package="${packageName}"]`)
+    const loader = root.querySelector<HTMLElement>(`.loader[data-package="${packageName}"]`)
+    if (!img) return
+    img.onload = () => {
+      if (loader) loader.style.display = 'none'
+      img.style.opacity = '1'
+    }
+    img.onerror = () => {
+      img.style.display = 'none'
+      const fallback = root.querySelector<HTMLElement>(`.app-icon-fallback[data-package="${packageName}"]`)
+      if (fallback) fallback.classList.add('visible')
+      if (loader) loader.style.display = 'none'
+    }
+    img.src = `ksu://icon/${packageName}`
+  }
+
+  #initDevMode(): void {
+    if (!this.#config.get('target')) {
+      this.#config.set('target', [
+        'io.github.vvb2060.keyattestation',
+        'com.google.android.gms',
+        'net.one97.paytm',
+      ])
+    }
+
+    this.#entries = [
+      { packageName: 'io.github.vvb2060.keyattestation', appName: 'Key Attestation', isSystem: false },
+      { packageName: 'net.one97.paytm', appName: 'Paytm', isSystem: false },
+      { packageName: 'my.com.tngdigital.ewallet', appName: 'Touch n Go eWallet', isSystem: false },
+      { packageName: 'com.google.android.gms', appName: 'Google Play Services', isSystem: true },
+      { packageName: 'com.android.vending', appName: 'Google Play Store', isSystem: true },
+      { packageName: 'com.google.android.gsf', appName: 'Google Services Framework', isSystem: true },
+    ]
+  }
+}

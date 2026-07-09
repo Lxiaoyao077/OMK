@@ -1,0 +1,5 @@
+export const MOD_ID = 'oh_my_keymint'
+export const LOCAL_STORAGE_PREFIX = 'OhMyKeymintWebUI'
+export const GITHUB_REPO = 'qwq233/OhMyKeymint'
+export const TELEGRAM_CHANNEL = 'https://t.me/OhMyKeymint'
+export const KEYBOX_REPO_URL = 'https://keybox.kowx712.cc'
