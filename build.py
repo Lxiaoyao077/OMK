@@ -35,6 +35,11 @@ ABI_TO_MODULE_ARCHES = {
 }
 
 BORINGSSL_BUILD_DIRS = {
+    "aarch64-linux-android": REPO_ROOT / "boringssl" / "build",
+    "x86_64-linux-android": REPO_ROOT / "boringssl" / "build-x86_64",
+}
+
+BORINGSSL_FALLBACK_BUILD_DIRS = {
     "aarch64-linux-android": Path.home() / ".cargo" / "boringssl" / "build",
     "x86_64-linux-android": Path.home() / ".cargo" / "boringssl" / "build-x86_64",
 }
@@ -73,9 +78,14 @@ MODULE_TEXT_FILES = (
 )
 
 
-def run(cmd: list[str], *, env: dict[str, str] | None = None) -> None:
+def run(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    env: dict[str, str] | None = None,
+) -> None:
     print("+", " ".join(cmd))
-    result = subprocess.run(cmd, cwd=REPO_ROOT, env=env)
+    result = subprocess.run(cmd, cwd=cwd or REPO_ROOT, env=env)
     if result.returncode != 0:
         raise RuntimeError(f"command failed: {' '.join(cmd)}")
 
@@ -116,10 +126,26 @@ def get_git_commit_hash() -> str:
 def cargo_env_for_target(target: str) -> dict[str, str]:
     env = os.environ.copy()
     if "BORINGSSL_BUILD_DIR" not in env:
-        boring_dir = BORINGSSL_BUILD_DIRS.get(target)
-        if boring_dir and boring_dir.exists():
-            env["BORINGSSL_BUILD_DIR"] = os.fspath(boring_dir)
+        for boring_dir in (
+            BORINGSSL_BUILD_DIRS.get(target),
+            BORINGSSL_FALLBACK_BUILD_DIRS.get(target),
+        ):
+            if boring_dir and boring_dir.exists():
+                env["BORINGSSL_BUILD_DIR"] = os.fspath(boring_dir)
+                break
     return env
+
+
+def build_webui() -> None:
+    webui_dir = REPO_ROOT / "webui"
+    if not webui_dir.exists():
+        raise FileNotFoundError(f"WebUI directory not found at {webui_dir}")
+
+    package_lock = webui_dir / "package-lock.json"
+    install_cmd = ["npm", "ci"] if package_lock.exists() else ["npm", "install"]
+
+    run(install_cmd, cwd=webui_dir)
+    run(["npm", "run", "build"], cwd=webui_dir)
 
 
 def build_binary(
@@ -356,6 +382,7 @@ def main() -> None:
     print(f"Build mode: {'Release' if args.release else 'Debug'}")
     print(f"Target ABIs: {', '.join(selected_abis)}")
 
+    build_webui()
     delete_old_zips(args.release, selected_abis)
     built_packages = []
     for abi in selected_abis:

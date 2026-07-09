@@ -61,6 +61,7 @@ extract "$ZIPFILE" 'customize.sh'  "$TMPDIR/.vunzip"
 extract "$ZIPFILE" 'verify.sh'     "$TMPDIR/.vunzip"
 
 ui_print "- Extracting module files"
+rm -f "$MODPATH/action.sh"
 extract "$ZIPFILE" 'module.prop'     "$MODPATH"
 extract "$ZIPFILE" 'post-fs-data.sh' "$MODPATH"
 extract "$ZIPFILE" 'service.sh'      "$MODPATH"
@@ -69,6 +70,10 @@ extract "$ZIPFILE" 'daemon'          "$MODPATH"
 extract "$ZIPFILE" 'daemon-injector' "$MODPATH"
 extract "$ZIPFILE" 'injector.toml'   "$MODPATH"
 extract "$ZIPFILE" 'keybox.xml'      "$MODPATH"
+rm -rf "$MODPATH/webroot"
+unzip -o "$ZIPFILE" 'webroot/*' -d "$MODPATH" >&2
+[ -f "$MODPATH/webroot/index.html" ] || abort "! Missing webroot/index.html"
+[ -f "$MODPATH/webroot/config.json" ] || abort "! Missing webroot/config.json"
 chmod 755 "$MODPATH/daemon" "$MODPATH/daemon-injector" \
   "$MODPATH/post-fs-data.sh" "$MODPATH/service.sh"
 
