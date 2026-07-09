@@ -165,11 +165,23 @@ where
     Clear: FnMut(),
     F: FnMut(&Strong<B>) -> Result<T>,
 {
-    let client = get()?;
+    let client = match get() {
+        Ok(client) => client,
+        Err(error) if is_recoverable_rpc_error(&error) => {
+            warn!(
+                "{tag} client fetch hit recoverable RPC error; clearing cache and retrying once: {error:#}"
+            );
+            clear();
+            get()?
+        }
+        Err(error) => return Err(error),
+    };
     match f(&client) {
         Ok(value) => Ok(value),
-        Err(error) if is_dead_object_error(&error) => {
-            warn!("{tag} transaction hit DeadObject; clearing cache and retrying once");
+        Err(error) if is_recoverable_rpc_error(&error) => {
+            warn!(
+                "{tag} transaction hit recoverable RPC error; clearing cache and retrying once: {error:#}"
+            );
             clear();
             let client = get()?;
             f(&client)
@@ -326,9 +338,42 @@ pub(crate) fn is_dead_object_error(error: &anyhow::Error) -> bool {
     })
 }
 
+fn is_recoverable_rpc_error(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<Status>()
+            .is_some_and(is_recoverable_rpc_status)
+            || cause
+                .downcast_ref::<StatusCode>()
+                .is_some_and(|status| is_recoverable_rpc_status_code(*status))
+            || cause
+                .to_string()
+                .starts_with("failed to connect to omk")
+    })
+}
+
 fn is_dead_object_status(status: &Status) -> bool {
     status.exception_code() == ExceptionCode::TransactionFailed
         && status.transaction_error() == StatusCode::DeadObject
+}
+
+fn is_recoverable_rpc_status(status: &Status) -> bool {
+    status.exception_code() == ExceptionCode::TransactionFailed
+        && is_recoverable_rpc_status_code(status.transaction_error())
+}
+
+fn is_recoverable_rpc_status_code(status: StatusCode) -> bool {
+    match status {
+        StatusCode::DeadObject | StatusCode::NameNotFound | StatusCode::NoInit => true,
+        StatusCode::Errno(errno) => {
+            let errno = errno.abs();
+            matches!(
+                errno,
+                libc::ENOENT | libc::ECONNREFUSED | libc::ECONNRESET | libc::ENOTCONN | libc::EPIPE
+            )
+        }
+        _ => false,
+    }
 }
 
 fn clear_rpc_caches() {
@@ -362,5 +407,31 @@ mod tests {
     fn ignores_non_dead_object_status() {
         let status = Status::from(StatusCode::Ok);
         assert!(!is_dead_object_status(&status));
+    }
+
+    #[test]
+    fn recognizes_recoverable_rpc_errors() {
+        for status in [
+            StatusCode::DeadObject,
+            StatusCode::NoInit,
+            StatusCode::NameNotFound,
+            StatusCode::Errno(libc::ECONNREFUSED),
+            StatusCode::Errno(libc::EPIPE),
+        ] {
+            let error = anyhow::Error::new(Status::from(status));
+            assert!(
+                is_recoverable_rpc_error(&error),
+                "{status:?} should be retried as a recoverable OMK RPC error"
+            );
+        }
+
+        let connect = anyhow::anyhow!("failed to connect to omk service");
+        assert!(is_recoverable_rpc_error(&connect));
+    }
+
+    #[test]
+    fn ignores_non_recoverable_rpc_errors() {
+        let error = anyhow::Error::new(Status::new_service_specific_error(7, None));
+        assert!(!is_recoverable_rpc_error(&error));
     }
 }
