@@ -70,7 +70,8 @@ export class SystemAppDialog {
     if (this.#dialog) applyDialogAnimation(this.#dialog)
   }
 
-  show(): void {
+  async show(): Promise<void> {
+    await this.#appList.reloadPackages()
     const container = this.#dialog?.querySelector<HTMLElement>('#system-app-list')
     if (container) {
       this.#appList.renderSystemAppList(container)

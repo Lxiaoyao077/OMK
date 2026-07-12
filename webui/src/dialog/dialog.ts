@@ -64,8 +64,8 @@ export class DialogController {
     this.help.show()
   }
 
-  showSystemApp(): void {
-    this.systemApp.show()
+  async showSystemApp(): Promise<void> {
+    await this.systemApp.show()
   }
 
   showTrust(): void {

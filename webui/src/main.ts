@@ -68,8 +68,7 @@ document.querySelector<HTMLDivElement>('#app')!.innerHTML = /* html */ `
 
 const appList = new AppList(config)
 await config.read()
-await appList.fetch()
-appList.syncSystemAppsWithConfig()
+await appList.reloadPackages()
 const appListContainer = document.querySelector<HTMLElement>('.app-list')!
 appList.renderAppList(appListContainer)
 
@@ -109,7 +108,7 @@ mainMenu.on('menu-close', () => {
   appList.menuOpen = false
 })
 mainMenu.on('menu-refresh', () => {
-  void appList.refresh()
+  void appList.refreshPackages()
 })
 mainMenu.on('menu-select-all', () => appList.selectAll())
 mainMenu.on('menu-deselect-all', () => appList.deselectAll())

@@ -1,4 +1,4 @@
-import { listPackages, getPackagesInfo } from 'kernelsu-alt'
+import { exec, listPackages, getPackagesInfo } from 'kernelsu-alt'
 import type { PackagesInfo } from 'kernelsu-alt'
 import { Config } from '../config'
 import './app_list.scss'
@@ -16,6 +16,8 @@ export interface AppEntry {
   appName: string
   isSystem: boolean
 }
+
+type PackageListType = 'user' | 'system' | 'all'
 
 export class AppList {
   #entries: AppEntry[] = []
@@ -35,7 +37,7 @@ export class AppList {
       return
     }
 
-    const pkgs = await listPackages('all').catch(() => [])
+    const pkgs = await this.#listPackagesFresh('all').catch(() => listPackages('all').catch(() => []))
 
     let infos: PackagesInfo[]
     try {
@@ -51,11 +53,15 @@ export class AppList {
       }))
     }
 
-    this.#entries = pkgs.map((pkg: string, index: number) => ({
-      packageName: pkg,
-      appName: infos[index]?.appLabel || pkg,
-      isSystem: infos[index]?.isSystem ?? false,
-    }))
+    const infoMap = new Map(infos.map((info) => [info.packageName, info]))
+    this.#entries = pkgs.map((pkg: string) => {
+      const info = infoMap.get(pkg)
+      return {
+        packageName: pkg,
+        appName: info?.appLabel || pkg,
+        isSystem: info?.isSystem ?? false,
+      }
+    })
   }
 
   async save(): Promise<void> {
@@ -63,14 +69,27 @@ export class AppList {
     await this.#config.write()
   }
 
+  async reloadPackages(): Promise<void> {
+    await this.fetch()
+    this.syncSystemAppsWithConfig()
+  }
+
+  async refreshPackages(scrollToTop: boolean = true): Promise<void> {
+    await this.reloadPackages()
+    if (this.#container) {
+      this.renderAppList(this.#container)
+      if (scrollToTop) window.scrollTo(0, 0)
+    }
+  }
+
   async refresh(force: boolean = true): Promise<void> {
     if (force) {
       await this.#config.read()
-      await this.fetch()
+      await this.refreshPackages()
+      return
     }
     if (this.#container) {
       this.renderAppList(this.#container)
-      if (force) window.scrollTo(0, 0)
     }
   }
 
@@ -293,6 +312,28 @@ export class AppList {
       if (loader) loader.style.display = 'none'
     }
     img.src = `ksu://icon/${packageName}`
+  }
+
+  async #listPackagesFresh(type: PackageListType): Promise<string[]> {
+    const suffix = {
+      all: '',
+      user: '-3',
+      system: '-s',
+    }[type]
+    const command = ['pm', 'list', 'packages', suffix].filter(Boolean).join(' ')
+    const result = await exec(command)
+    if (result.errno !== 0) {
+      throw new Error(result.stderr.trim() || `pm exited with code ${result.errno}`)
+    }
+
+    const packages = result.stdout
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith('package:'))
+      .map((line) => line.replace(/^package:/, ''))
+      .filter(Boolean)
+
+    return [...new Set(packages)]
   }
 
   #initDevMode(): void {
