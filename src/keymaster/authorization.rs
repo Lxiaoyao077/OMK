@@ -587,7 +587,7 @@ fn get_system_keymint(service: &'static str) -> Result<Strong<dyn IKeyMintDevice
         }
 
         let keymint: Strong<dyn IKeyMintDevice> =
-            hub::get_interface(service).with_context(|| format!("connect {service}"))?;
+            hub::check_interface(service).with_context(|| format!("connect {service}"))?;
         let recipient: Arc<dyn DeathRecipient> = Arc::new(SystemKeymintDeath { service });
         keymint
             .as_binder()

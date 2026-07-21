@@ -436,7 +436,7 @@ fn probe_phone_string_via_binder(
     value_label: &str,
 ) -> Result<Option<String>> {
     let binder =
-        hub::get_service(service).ok_or_else(|| anyhow!("service {service} unavailable"))?;
+        hub::check_service(service).ok_or_else(|| anyhow!("service {service} unavailable"))?;
     let proxy = binder
         .as_proxy()
         .with_context(|| format!("{label} binder was unexpectedly local"))?;

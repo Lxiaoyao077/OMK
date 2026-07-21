@@ -181,7 +181,7 @@ pub fn get_timestamp_service() -> Result<Strong<dyn ISecureClock>> {
 fn connect_secureclock() -> Result<Strong<dyn ISecureClock>> {
     let descriptors = <crate::android::hardware::security::secureclock::ISecureClock::BpSecureClock as ISecureClock>::descriptor();
     let dev: Strong<dyn ISecureClock> =
-        rsbinder::hub::get_interface(descriptors).context(err!())?;
+        rsbinder::hub::check_interface(descriptors).context(err!())?;
 
     Ok(dev)
 }

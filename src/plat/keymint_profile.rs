@@ -169,7 +169,7 @@ fn probe_system_keymint_hardware_info(
     let service = system_keymint_service_name(security_level)
         .ok_or_else(|| anyhow!("unsupported security level for system KeyMint probe"))?;
     let keymint: Strong<dyn IKeyMintDevice> =
-        hub::get_interface(service).with_context(|| format!("connect {service}"))?;
+        hub::check_interface(service).with_context(|| format!("connect {service}"))?;
     if keymint.as_binder().as_proxy().is_none() {
         bail!("system KeyMint service {service} resolved to a local binder");
     }

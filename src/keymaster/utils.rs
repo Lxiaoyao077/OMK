@@ -1146,7 +1146,7 @@ pub fn retry_get_interface<T: FromIBinder + ?Sized>(
     let mut attempts = 0;
     let mut wait_time = Duration::from_secs(1);
     loop {
-        let err = match hub::get_interface(name) {
+        let err = match hub::check_interface(name) {
             Ok(res) => {
                 if attempts > 1 {
                     info!("Success on get_interface({name}) after {attempts} failures!");
@@ -1230,7 +1230,7 @@ pub fn app_info_for_uid(uid: AppUid) -> AppInfo {
     }
 
     let pm: Strong<dyn IPackageManagerNative> =
-        match hub::get_interface(PACKAGE_MANAGER_NATIVE_SERVICE) {
+        match hub::check_interface(PACKAGE_MANAGER_NATIVE_SERVICE) {
             Ok(pm) => pm,
             Err(e) => {
                 warn!("failed to connect to PackageManager: {e:?}");
@@ -1303,7 +1303,7 @@ fn app_info_for_uid_legacy_pm(
         }
     };
 
-    let binder = match hub::get_service(PACKAGE_MANAGER_NATIVE_SERVICE) {
+    let binder = match hub::check_service(PACKAGE_MANAGER_NATIVE_SERVICE) {
         Some(binder) => binder,
         None => {
             warn!("failed to connect to PackageManager service binder");

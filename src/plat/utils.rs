@@ -121,7 +121,7 @@ pub fn get_keystore_service() -> anyhow::Result<rsbinder::Strong<dyn IKeystoreSe
         guard.death_recipient = None;
     }
 
-    let service: rsbinder::Strong<dyn IKeystoreService> = hub::get_interface(KEYSTORE_SERVICE)
+    let service: rsbinder::Strong<dyn IKeystoreService> = hub::check_interface(KEYSTORE_SERVICE)
         .map_err(|error| anyhow::anyhow!("failed to connect to {KEYSTORE_SERVICE}: {error:?}"))?;
     let generation = KEYSTORE_GENERATION.fetch_add(1, Ordering::Relaxed) + 1;
     let recipient = Arc::new(KeystoreDeathRecipient {
@@ -173,7 +173,7 @@ where
             return Ok(client.clone());
         }
 
-        let client: Strong<T> = hub::get_interface(service_name)?;
+        let client: Strong<T> = hub::check_interface(service_name)?;
         let recipient: Arc<dyn DeathRecipient> = Arc::new(make_recipient());
         client
             .as_binder()

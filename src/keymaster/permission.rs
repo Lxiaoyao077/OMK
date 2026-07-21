@@ -643,7 +643,7 @@ fn check_android_permission_with_controller(
     permission_denied: KsError,
 ) -> anyhow::Result<()> {
     let controller: rsbinder::Strong<dyn IPermissionController> =
-        hub::get_interface(PERMISSION_CONTROLLER_SERVICE).context(format!(
+        hub::check_interface(PERMISSION_CONTROLLER_SERVICE).context(format!(
             "service {PERMISSION_CONTROLLER_SERVICE} unavailable"
         ))?;
     let has_permission = controller
@@ -665,7 +665,7 @@ fn check_android_permission_with_manager(
     permission: &str,
     permission_denied: KsError,
 ) -> anyhow::Result<()> {
-    let binder = hub::get_service(PERMISSION_MANAGER_SERVICE)
+    let binder = hub::check_service(PERMISSION_MANAGER_SERVICE)
         .ok_or_else(KsError::sys)
         .context(format!("service {PERMISSION_MANAGER_SERVICE} unavailable"))?;
     let proxy = binder
