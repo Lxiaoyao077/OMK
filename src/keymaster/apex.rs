@@ -152,6 +152,14 @@ pub fn parse_active_modules_xml(xml: &str) -> Result<Vec<ApexModuleInfo>> {
 }
 
 pub fn encode_module_info(module_info: &[ApexModuleInfo]) -> Result<Vec<u8>, der::Error> {
+    let mut package_names = BTreeSet::new();
+    if module_info
+        .iter()
+        .any(|module| !package_names.insert(module.package_name.as_bytes()))
+    {
+        return Err(der::ErrorKind::Value { tag: der::Tag::Set }.into());
+    }
+
     SetOfVec::<ApexModuleInfo>::from_iter(module_info.iter().cloned())?.to_der()
 }
 
@@ -253,7 +261,10 @@ mod tests {
         let actual = encode_module_info(&modules);
 
         assert!(actual.is_err());
-        assert_eq!(ErrorKind::SetDuplicate, actual.unwrap_err().kind());
+        assert_eq!(
+            ErrorKind::Value { tag: der::Tag::Set },
+            actual.unwrap_err().kind()
+        );
     }
 
     #[test]

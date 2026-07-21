@@ -288,9 +288,7 @@ fn is_recoverable_rpc_error(error: &anyhow::Error) -> bool {
             || cause
                 .downcast_ref::<StatusCode>()
                 .is_some_and(|status| is_recoverable_rpc_status_code(*status))
-            || cause
-                .to_string()
-                .starts_with("failed to connect to omk")
+            || cause.to_string().starts_with("failed to connect to omk")
     })
 }
 
