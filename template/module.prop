@@ -3,5 +3,5 @@ name=Oh My Keymint
 version=${versionName}
 versionCode=${versionCode}
 author=James Clef
-description=Custom keystore implementation for Android Keystore Spoofer
+description=Android Keystore 自定义实现 | 适配 Android 12+ 的 KeyMint 欺骗方案
 updateJson=https://raw.githubusercontent.com/qwq233/OhMyKeymint/changelog/update.json
