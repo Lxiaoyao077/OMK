@@ -19,7 +19,7 @@ export class I18nManager {
     'dv', // Dhivehi
   ])
 
-  #currentLang = 'en'
+  #currentLang = 'zh-CN'
   #translations: Translations = {}
   #baseTranslations: Translations = {}
   #availableLanguages: string[] = ['en']
@@ -136,10 +136,10 @@ export class I18nManager {
       if (this.#availableLanguages.includes(langCode)) return langCode
 
       localStorage.removeItem(I18nManager.STORAGE_KEY)
-      return 'en'
+      return 'zh-CN'
     } catch (error) {
       console.error('Error detecting user language:', error)
-      return 'en'
+      return 'zh-CN'
     }
   }
 
